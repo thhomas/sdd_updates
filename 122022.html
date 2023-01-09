@@ -667,7 +667,7 @@
             }
         </style>
         <meta name="robots" content="noindex,nofollow" />
-        <meta property="og:title" content="SDD Updates September 2022" />
+        <meta property="og:title" content="SDD Updates December 2022" />
     </head>
 
     <!--[if mso]>
@@ -876,7 +876,7 @@
                                                     style="margin-top: 0; margin-bottom: 0; font-family: calibri, carlito, pt sans, trebuchet ms, sans-serif; font-size: 16px; line-height: 24px; text-align: left;"
                                                     lang="x-size-16"
                                                 >
-                                                    <span class="font-calibri" style="text-decoration: inherit;">Welcome to the September updates!</span>
+                                                    <span class="font-calibri" style="text-decoration: inherit;">Welcome to the December updates!</span>
                                                 </p>
                                                 <p
                                                     class="size-16"
@@ -1015,12 +1015,12 @@
                                         </div>
 
                                         <div style="font-size: 12px; font-style: normal; font-weight: normal; line-height: 19px;" align="center">
-                                            <a style="text-decoration: underline; transition: opacity 0.1s ease-in; color: #0046ad;" href="https://www.spc.int/updates/blog/did-you-know/2022/09/stat-of-the-week-in-fiji-gross-tourism-earnings-were-only-3-of" target="_blank">
+                                            <a style="text-decoration: underline; transition: opacity 0.1s ease-in; color: #0046ad;" href="https://www.spc.int/updates/blog/did-you-know/2022/12/stat-of-the-week-in-the-federated-states-of-micronesia-25-of-the" target="_blank">
                                                 <img
                                                     style="border: 0; display: block; height: auto; width: 100%; max-width: 176px;"
                                                     alt=""
                                                     width="176"
-                                                    src="https://www.spc.int//sites/default/files/featuredimages/blog/2022-09/Stat%20of%20the%20week%20In%20Fiji%2C%20gross%20tourism%20earnings%20were%20only%203%25%20of%20GDP%20in%202020%20-%20SPC%20Pacific%20Community.jpg"
+                                                    src="https://www.spc.int//sites/default/files/featuredimages/blog/2022-12/Stat%20of%20the%20week%20twitter%20-%20spc-%20pacific%20community%20-%20coconut%20fsm.jpg"
                                                 />
                                             </a>
                                         </div>
@@ -1028,8 +1028,224 @@
                                         <div style="margin-left: 20px; margin-right: 20px; margin-top: 20px;">
                                             <div style="mso-line-height-rule: exactly; mso-text-raise: 11px; vertical-align: middle;">
                                                 <p class="size-12" style="margin-top: 0; margin-bottom: 0; font-size: 12px; line-height: 19px; text-align: left;" lang="x-size-12">
-                                                    Did you know? In Fiji, gross tourism earnings were only 3% of GDP in 2020, a significant drop from the previous year (17% in 2019). This decrease was mainly due to the COVID-19 pandemic.
- <a href="https://www.spc.int/updates/blog/did-you-know/2022/09/stat-of-the-week-in-fiji-gross-tourism-earnings-were-only-3-of">More info</a>
+                                                    Did you know that in the Federated States of Micronesia, 25% of the land area was used for the cultivation of coconuts in 2020?
+ 
+ 
+
+ 
+ 
+
+
+ {
+  return response.json();
+}).then(data => {
+
+  const structure = data.data.structures[0];
+  const indicator = structure.dimensions.observation.find(el => el.id == "INDICATOR");
+  const admAreas = structure.dimensions.observation.find(el => el.id == 'GEO_PICT');
+  const observations = data.data.dataSets[0].observations;
+
+  landAreas = {};
+  admAreas.values.forEach((admArea, index) => {
+    const obs_key = Object.keys(observations)
+      .filter(key => key.split(':')[admAreas.keyPosition] == index)[0]
+    const indicator_value = obs_key in observations?observations[obs_key][0]:null
+    landAreas[admArea.id] = indicator_value*100; // convert to hectares
+  })
+
+
+  fetch(sdmxUrl, {
+    headers: {'Accept': 'application/vnd.sdmx.data+json;version=2.0.0'}
+  }).then(response => {
+    return response.json();
+  }).then(data => {
+
+    const structure = data.data.structures[0];
+    const title = structure.name;
+    const indicator = structure.dimensions.observation.find(el => el.id == "INDICATOR");
+    const frequency = structure.dimensions.observation.find(el => el.id == "FREQ");
+    const crops = structure.dimensions.observation.find(el => el.id == "CROP");
+    const admAreas = structure.dimensions.observation.find(el => el.id == 'GEO_PICT');
+    const observations = data.data.dataSets[0].observations;
+
+
+
+    const vectorSource = new ol.source.Vector({
+      loader: function (extent, resolution, projection, success, failure) {
+        const url = 'https://www.spc.int/modules/contrib/spc_dot_stat_data/modules/spc_dot_stat_map/maps/eez.json';      
+        fetch(url).then((response) => response.json()).then((response) => {
+          const features = new ol.format.GeoJSON().readFeatures(response);
+          features.map(feature => {
+            const areaId = feature.get('id');
+            const adm2Area = admAreas.values.filter(adm => adm.id == areaId)[0];
+            feature.setProperties({
+              cropObservations: crops.values.map((crop, index) => {
+                const obs_key = Object.keys(observations)
+                  .filter(key => key.split(':')[crops.keyPosition] == index)
+                  .filter(key => key.split(':')[admAreas.keyPosition] == admAreas.values.indexOf(adm2Area))[0]
+                return {
+                  name: crop.name,
+                  value: obs_key in observations?observations[obs_key][0]:null
+                }
+              }),
+              landArea: (adm2Area)?landAreas[adm2Area.id]:null,
+              areaName: feature.get('name')
+            })
+        });
+        vectorSource.addFeatures(features);
+        });
+      },
+      attributions: [ 'Source PDH.stat' ]
+    });
+
+    const vector = new ol.layer.Vector({
+      source: vectorSource,
+      style: function (feature) {
+        const crop = document.getElementById('select_crop_types').value;
+        
+        const cropValue = feature.get('cropObservations').find(obs => obs.name == crops.values[crop].name).value;
+        const totalValue = landAreas[feature.get('id')];
+        
+        return new ol.style.Style({
+          stroke: new ol.style.Stroke({
+            color: "black",
+            width: 2
+          }),
+          fill: new ol.style.Fill({
+            color: cropValue?d3.interpolateYlOrBr(2*cropValue/totalValue):'rgb(0, 0, 0, 0.5)',
+          }),
+          text: new ol.style.Text({
+            text: `${feature.get('areaName')}`,
+            fill: new ol.style.Fill({
+              color: 'black'
+            })
+          })
+        });
+      },
+    });
+
+    const raster = new ol.layer.Tile({
+      source: new ol.source.XYZ({
+        attributions:
+          'Tiles ArcGIS',
+        url:
+          'https://server.arcgisonline.com/ArcGIS/rest/services/' +
+          'World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+      }),
+    });
+
+    const map = new ol.Map({
+      layers: [raster, vector],
+      target: document.getElementById('map'),
+      view: new ol.View({
+        center: ol.proj.fromLonLat([180.0, -8.0], epsg3832),
+        zoom: 4,
+        projection: epsg3832
+      }),
+    });
+
+    const displayFeatureInfo = function (evt) {
+      const pixel = map.getEventPixel(evt.originalEvent);
+      const features = [];
+      map.forEachFeatureAtPixel(pixel, function (feature) {
+        features.push(feature);
+      });
+      const tooltip = document.getElementById('map-tooltip');
+      if (features.length > 0) {
+        const info = [];
+        let i, ii;
+        for (i = 0, ii = features.length; i  obs.name == crops.values[document.getElementById('select_crop_types').value].name).value;
+          const total_value = features[i].get('landArea');
+          info.push(`${features[i].get('areaName')} ${crop_value?Math.round(100*crop_value/total_value) + '%':''}: ${(crop_value?crop_value.toLocaleString() + ' (total '+ total_value.toLocaleString() + ')':'n/c')} `);
+        }
+        overlay.setPosition(evt.coordinate);
+        tooltip.style.display = 'block';
+
+        const tooltipHeader = document.getElementById('map-tooltip-header');
+        const tooltipContent = document.getElementById('map-tooltip-content');
+        tooltipHeader.innerText = `Area harvested (ha) for ${crops.values[document.getElementById('select_crop_types').value].name}`; 
+        tooltipContent.innerHTML = info.join('');
+        map.getTarget().style.cursor = 'pointer';
+      } else {
+        tooltip.style.display = 'none';
+        map.getTarget().style.cursor = '';
+      }
+    };
+
+    map.on('pointermove', function (evt) {
+      if (evt.dragging) {
+        return;
+      }
+      displayFeatureInfo(evt);
+    });
+
+    map.on('click', function (evt) {
+      displayFeatureInfo(evt);
+    });
+
+    // tooltip overlay
+    const tooltip = document.getElementById('map-tooltip');
+    const overlay = new ol.Overlay({
+      element: tooltip,
+      offset: [10, 0],
+      positioning: 'bottom-left'
+    });
+    map.addOverlay(overlay);
+
+    // create legend control
+    const legend = document.createElement('div');
+    legend.className = 'map-legend ol-control-panel ol-unselectable ol-control';
+    const legend_title = document.createElement('div'); legend_title.id = 'legend_title';
+    legend.appendChild(legend_title);
+    const legend_img = document.createElement('div');
+    legend_img.innerHTML = '0  50%';
+    legend.appendChild(legend_img);
+
+    /*legend.innerHTML = '0  50%';*/
+
+    map.addControl(new ol.control.Control({
+      element: legend
+    }));
+
+    // create select crop control
+    const form = document.createElement('div');
+    form.className = 'map-select ol-control-panel ol-unselectable ol-control';
+    form.innerHTML = 'Select Crop: ';
+
+    const select_crop_types = document.createElement('select');
+    select_crop_types.id = 'select_crop_types';
+    crops.values.forEach((crop, index) => {
+      let option = document.createElement('option');
+      option.text = crop.name;
+      option.value = index;
+      if(crop.name == 'Coconuts') {
+        option.setAttribute('selected', 'selected');
+        const title = document.getElementById('legend_title')
+        title.innerText = `Proportion of land used to grow ${crop.name}`;
+      }
+      select_crop_types.appendChild(option);
+    });
+    
+    select_crop_types.addEventListener('change', () => {
+      vectorSource.changed();
+      const title = document.getElementById('legend_title')
+      title.innerText = `Proportion of land used to grow ${crops.values[document.getElementById('select_crop_types').value].name}`;
+    });
+    form.appendChild(select_crop_types);
+
+    map.addControl(new ol.control.Control({
+      element: form
+    }));
+
+    
+  });
+});
+
+
+//-->
+
+*/
+ <a href="https://www.spc.int/updates/blog/did-you-know/2022/12/stat-of-the-week-in-the-federated-states-of-micronesia-25-of-the">More info</a>
                                                 </p>
                                             </div>
                                         </div>
@@ -1058,12 +1274,12 @@
                                         </div>
 
                                         <div style="font-size: 12px; font-style: normal; font-weight: normal; line-height: 19px;" align="center">
-                                            <a style="text-decoration: underline; transition: opacity 0.1s ease-in; color: #0046ad;" href="https://www.spc.int/updates/blog/did-you-know/2022/09/stat-of-the-week-in-fiji-1961-of-seats-are-held-by-women-in-the" target="_blank">
+                                            <a style="text-decoration: underline; transition: opacity 0.1s ease-in; color: #0046ad;" href="https://www.spc.int/updates/blog/did-you-know/2022/12/stat-of-the-week-females-15-spent-16-of-their-time-24-hour-day-on" target="_blank">
                                                 <img
                                                     style="border: 0; display: block; height: auto; width: 100%; max-width: 176px;"
                                                     alt=""
                                                     width="176"
-                                                    src="https://www.spc.int//sites/default/files/featuredimages/blog/2022-09/Stat%20of%20the%20week%20twitter%20-%20women%20in%20fiji%20parliament%20-%20spc%20pacific%20community.jpg"
+                                                    src="https://www.spc.int//sites/default/files/featuredimages/blog/2022-11/Stat%20of%20the%20week%20twitter%20-%20inequalities%20-%20domestic%20chores%20-%20Pacific%20community%20-%20SPC.jpg"
                                                 />
                                             </a>
                                         </div>
@@ -1071,8 +1287,12 @@
                                         <div style="margin-left: 20px; margin-right: 20px; margin-top: 20px;">
                                             <div style="mso-line-height-rule: exactly; mso-text-raise: 11px; vertical-align: middle;">
                                                 <p class="size-12" style="margin-top: 0; margin-bottom: 0; font-size: 12px; line-height: 19px; text-align: left;" lang="x-size-12">
-                                                    Did you know? In Fiji, 19.61% of seats are held by women in the national parliament, up from 14% in 2015. These gender inequalities remain in many countries in the world.
- <a href="https://www.spc.int/updates/blog/did-you-know/2022/09/stat-of-the-week-in-fiji-1961-of-seats-are-held-by-women-in-the">More info</a>
+                                                    Females (15+) spent 16% of their time (24-hour day) on unpaid domestic chores and care work in 2015 in Fiji. It was 6% for males.
+These gender inequalities remain in many countries in the world.
+The 20th of December will be Human Solidarity Day, we could try to make it a reality.
+ 
+Explore more data from Pacific Data Hub
+ <a href="https://www.spc.int/updates/blog/did-you-know/2022/12/stat-of-the-week-females-15-spent-16-of-their-time-24-hour-day-on">More info</a>
                                                 </p>
                                             </div>
                                         </div>
@@ -1101,12 +1321,12 @@
                                         </div>
 
                                         <div style="font-size: 12px; font-style: normal; font-weight: normal; line-height: 19px;" align="center">
-                                            <a style="text-decoration: underline; transition: opacity 0.1s ease-in; color: #0046ad;" href="https://www.spc.int/updates/blog/did-you-know/2022/09/stat-of-the-week-90-of-the-land-area-of-solomon-islands-is" target="_blank">
+                                            <a style="text-decoration: underline; transition: opacity 0.1s ease-in; color: #0046ad;" href="https://www.spc.int/updates/blog/did-you-know/2022/12/stat-of-the-week-in-2015-tonga-had-the-highest-right-to-housing" target="_blank">
                                                 <img
                                                     style="border: 0; display: block; height: auto; width: 100%; max-width: 176px;"
                                                     alt=""
                                                     width="176"
-                                                    src="https://www.spc.int//sites/default/files/featuredimages/blog/2022-09/Stat%20of%20the%20week%20twitter%20-%20twitter%201600%20%C3%97%20900px%29%20%282%29.jpg"
+                                                    src="https://www.spc.int//sites/default/files/featuredimages/blog/2022-11/Stat%20of%20the%20week%20-%20housing%20score%20-%20humain%20dignity%20-%20Pacific%20Community.jpg"
                                                 />
                                             </a>
                                         </div>
@@ -1114,8 +1334,11 @@
                                         <div style="margin-left: 20px; margin-right: 20px; margin-top: 20px;">
                                             <div style="mso-line-height-rule: exactly; mso-text-raise: 11px; vertical-align: middle;">
                                                 <p class="size-12" style="margin-top: 0; margin-bottom: 0; font-size: 12px; line-height: 19px; text-align: left;" lang="x-size-12">
-                                                    Nine-tenths of the land area of Solomon Islands is covered by forest. The Pacific Region (excluding Australia and New Zealand) has the highest forest cover of any region in the world. It is crucial to protect these forests because we depend on them for our survival, from supporting our livelihoods and providing habitats for animals, to cleaning the air we breathe and mitigating climate change.
- <a href="https://www.spc.int/updates/blog/did-you-know/2022/09/stat-of-the-week-90-of-the-land-area-of-solomon-islands-is">More info</a>
+                                                    In 2015, Tonga had the highest right to housing score (Core Standard) among the Pacific: 97%. This right is closely linked to the right to human dignity.
+10th of December is the Human Rights Day. 
+Historically, adequate housing was recognized as part of the right to an adequate standard of living in the 1948 Universal Declaration of Human Rights.
+Explore more data from the Pacific Data Hub. 
+ <a href="https://www.spc.int/updates/blog/did-you-know/2022/12/stat-of-the-week-in-2015-tonga-had-the-highest-right-to-housing">More info</a>
                                                 </p>
                                             </div>
                                         </div>
@@ -1240,13 +1463,13 @@
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
                                                         <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/news/2022/07/26/labour-kiribati-analysis-2019_20-HIES" target="_blank">Labour in Kiribati based on analysis of the 2019/20 HIES</a>
+                                                            <a href="https://sdd.spc.int/news/2022/12/06/pacific-statistical-economic-briefing-dashboard-covid-19-updates-q2" target="_blank">Pacific Statistical/Economic Briefing Dashboard, Covid-19 Economic Impacts Updates - Q2, 2022</a>
                                                         </p>
                                                     </li>
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
                                                         <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/news/2022/07/25/kiribati-census-atlas" target="_blank">Kiribati Census Atlas</a>
+                                                            <a href="https://sdd.spc.int/news/2022/12/01/Alcohol-trends-in-PICTs" target="_blank">Levels and trends in imports of alcoholic drinks and interventions to control use in selected PICTs</a>
                                                         </p>
                                                     </li>
                                                     
@@ -1276,12 +1499,12 @@
 
                                         <div style="margin-left: 20px; margin-right: 20px;">
                                             <div style="font-size: 12px; font-style: normal; font-weight: normal; line-height: 19px;" align="right">
-                                                <a style="text-decoration: underline; transition: opacity 0.1s ease-in; color: #0046ad;" href="https://sdd.spc.int/news/2022/07/26/labour-kiribati-analysis-2019_20-HIES" target="_blank">
+                                                <a style="text-decoration: underline; transition: opacity 0.1s ease-in; color: #0046ad;" href="https://sdd.spc.int/news/2022/12/06/pacific-statistical-economic-briefing-dashboard-covid-19-updates-q2" target="_blank">
                                                     <img
                                                         style="border: 0; display: block; height: auto; width: 100%; max-width: 200px;"
                                                         alt=""
                                                         width="200"
-                                                        src="https://sdd.spc.int/sites/default/files/2022-09/KI-Labour-banner.jpg"
+                                                        src="https://sdd.spc.int/sites/default/files/2022-12/image%20sdd%20Q2_1.PNG"
                                                     />
                                                 </a>
                                             </div>
@@ -1376,79 +1599,61 @@
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
                                                         <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/sdg-indicators-updated-include-latest-data-ilo-unsd-and-who" target="_blank">SDG indicators updated to include the latest data from ILO, UNSD and WHO</a>
+                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/sdg-indicators-updated-latest-data-ilo-unsd-and-who" target="_blank">SDG indicators updated with the latest data from ILO, UNSD and WHO</a>
                                                         </p>
                                                     </li>
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
                                                         <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/government-finance-statistics-updated-include-new-revenue-data-oecd-0" target="_blank">Government Finance Statistics updated to include new revenue data from OECD</a>
+                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/commodity-prices-updated-latest-data-world-bank" target="_blank">Commodity prices updated with the latest data from World Bank</a>
                                                         </p>
                                                     </li>
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
                                                         <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/thematic-indicators-education-updated-include-latest-data-uis-1" target="_blank">Thematic indicators on education updated to include latest data from UIS</a>
+                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/crops-and-livestock-products-updated-include-latest-data-fao-2" target="_blank">Crops and livestock products updated to include the latest data from FAO</a>
                                                         </p>
                                                     </li>
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
                                                         <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/indicators-digital-development-updated-latest-data-itu" target="_blank">Indicators on digital development updated with latest data from ITU</a>
+                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/selection-world-bank-world-development-indicators-wb-wdi-pacific-island-6" target="_blank">Selection of World Bank World Development Indicators (WB WDI) for Pacific Island Countries and Territories updated with the latest data from World Bank</a>
                                                         </p>
                                                     </li>
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
                                                         <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/trade-ict-products-and-services-updated-latest-data-unctad-1" target="_blank">Trade in ICT products and services updated with latest data from UNCTAD</a>
+                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/balance-payments-updated-latest-data-imf-8" target="_blank">Balance of Payments updated with the latest data from IMF</a>
                                                         </p>
                                                     </li>
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
                                                         <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/indicators-international-monetary-fund-financial-access-survey-imf-fas-1" target="_blank">Indicators from the International Monetary Fund Financial Access Survey (IMF FAS) updated</a>
+                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/currency-exchange-rates-updated-latest-data-imf" target="_blank">Currency exchange rates updated with the latest data from IMF</a>
                                                         </p>
                                                     </li>
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
                                                         <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/selection-world-bank-worldwide-governance-indicators-wb-wgi-updated-1" target="_blank">Selection of World Bank Worldwide Governance Indicators (WB WGI) updated to include latest data from World Bank</a>
+                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/disability-statistics-updated" target="_blank">Disability statistics updated</a>
                                                         </p>
                                                     </li>
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
                                                         <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/commodity-prices-updated-include-latest-data-world-bank-3" target="_blank">Commodity prices updated to include the latest data from World Bank</a>
+                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/household-expenditure-dataset-updated-more-data-household-income-and" target="_blank">Household expenditure dataset updated with more data from Household Income and Expenditure Survey (HIES)</a>
                                                         </p>
                                                     </li>
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
                                                         <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/selection-world-bank-world-development-indicators-wb-wdi-pacific-island-3" target="_blank">Selection of World Bank World Development Indicators (WB WDI) for Pacific Island Countries and Territories updated to include latest data from World Bank</a>
+                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/covid-19-economic-lead-indicators-updated-4" target="_blank">COVID-19 economic lead indicators updated</a>
                                                         </p>
                                                     </li>
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
                                                         <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/currency-exchange-rates-updated-include-latest-data-imf-17" target="_blank">Currency exchange rates updated to include the latest data from IMF</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/balance-payments-updated-latest-data-imf-5" target="_blank">Balance of Payments updated with the latest data from IMF</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/covid-19-economic-lead-indicators-updated-3" target="_blank">COVID-19 economic lead indicators updated</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/trade-statistics-updated-kiribati-1" target="_blank">Trade statistics updated for Kiribati</a>
+                                                            <a href="https://sdd.spc.int/innovation-sdd/pdhstat/trade-statistics-updated-cook-fiji-tonga-and-vanuatu" target="_blank">Trade statistics updated for Cook Is, Fiji, Tonga and Vanuatu</a>
                                                         </p>
                                                     </li>
                                                     
@@ -1464,79 +1669,6 @@
 
                             <div style="mso-line-height-rule: exactly; line-height: 30px; font-size: 30px;">&nbsp;</div>
 
-                            
-                            <div
-                                class="layout one-col fixed-width stack"
-                                style="margin: 0 auto; max-width: 600px; min-width: 320px; width: 320px; width: calc(28000% - 167400px); overflow-wrap: break-word; word-wrap: break-word; word-break: break-word;"
-                            >
-                                <div class="layout__inner" style="border-collapse: collapse; display: table; width: 100%; background-color: #e8f6ff;">
-                                    <!--[if (mso)|(IE)]><table align="center" cellpadding="0" cellspacing="0" role="presentation"><tr class="layout-fixed-width" style="background-color: #e8f6ff;"><td style="width: 600px" class="w560"><![endif]-->
-                                    <div class="column" style="text-align: left; color: #363f48; font-size: 15px; line-height: 23px; font-family: Calibri, Carlito, PT Sans, Trebuchet MS, sans-serif;">
-                                        <div style="margin-left: 20px; margin-right: 20px;">
-                                            <div style="mso-line-height-rule: exactly; line-height: 12px; font-size: 1px;">&nbsp;</div>
-                                        </div>
-
-                                        <div style="margin-left: 20px; margin-right: 20px;">
-                                            <div style="mso-line-height-rule: exactly; mso-text-raise: 11px; vertical-align: middle;">
-                                                <h3
-                                                    class="size-18"
-                                                    style="
-                                                        margin-top: 0;
-                                                        margin-bottom: 12px;
-                                                        font-style: normal;
-                                                        font-weight: normal;
-                                                        color: #363f48;
-                                                        font-size: 17px;
-                                                        line-height: 26px;
-                                                        font-family: calibri, carlito, pt sans, trebuchet ms, sans-serif;
-                                                        text-align: center;
-                                                    "
-                                                    lang="x-size-18"
-                                                >
-                                                    <span class="font-calibri" style="text-decoration: inherit;">
-                                                        <font color="#000000"><strong>Innovation Updates</strong></font>
-                                                    </span>
-                                                </h3>
-                                            </div>
-                                        </div>
-
-                                        <div style="margin-left: 20px; margin-right: 20px;">
-                                            <div style="mso-line-height-rule: exactly; line-height: 4px; font-size: 1px;">&nbsp;</div>
-                                        </div>
-                                    </div>
-                                    <!--[if (mso)|(IE)]></td></tr></table><![endif]-->
-                                </div>
-                            </div>
-
-                            <div style="mso-line-height-rule: exactly; line-height: 10px; font-size: 10px;">&nbsp;</div>
-
-                            <div
-                                class="layout one-col fixed-width stack"
-                                style="margin: 0 auto; max-width: 600px; min-width: 320px; width: 320px; width: calc(28000% - 167400px); overflow-wrap: break-word; word-wrap: break-word; word-break: break-word;"
-                            >
-                                <div class="layout__inner" style="border-collapse: collapse; display: table; width: 100%; background-color: #ffffff;">
-                                    <!--[if (mso)|(IE)]><table align="center" cellpadding="0" cellspacing="0" role="presentation"><tr class="layout-fixed-width" style="background-color: #ffffff;"><td style="width: 600px" class="w560"><![endif]-->
-                                    <div class="column" style="text-align: left; color: #363f48; font-size: 15px; line-height: 23px; font-family: Calibri, Carlito, PT Sans, Trebuchet MS, sans-serif;">
-                                        <div style="margin-left: 20px; margin-right: 20px;">
-                                            <div style="mso-line-height-rule: exactly; mso-text-raise: 11px; vertical-align: middle;">
-                                                <p class="size-15" style="margin-top: 0; margin-bottom: 0; font-size: 15px; line-height: 23px; text-align: left;" lang="x-size-15">
-                                                    <span style="text-decoration: inherit; color: #00b0ca;">New&nbsp;</span>
-                                                </p>
-                                                <ul style="margin-top: 20px; margin-bottom: 0; margin-left: 24px; padding: 0; list-style-type: disc;">
-                                                    
-                                                    <li class="size-14" style="margin-top: 20px; margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://sdd.spc.int/innovation-sdd/popgis-v3/tuvalu-popgis3-updated-2017-population-and-housing-census-data-now" target="_blank">Tuvalu PopGIS3 updated. 2017 Population and Housing Census data now available.</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                </ul>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <!--[if (mso)|(IE)]></td></tr></table><![endif]-->
-                                </div>
-                            </div>
                              
 
                             <div style="mso-line-height-rule: exactly; line-height: 30px; font-size: 30px;">&nbsp;</div>
@@ -1614,19 +1746,7 @@
                                                 <ul style="margin-top: 20px; margin-bottom: 0; margin-left: 24px; padding: 0; list-style-type: disc;">
                                                     
                                                     <li class="size-15" style="margin-bottom: 0; margin-left: 0; font-size: 15px; line-height: 23px; text-align: left;" lang="x-size-15">
-                                                        <a href="https://microdata.pacificdata.org/index.php/catalog/858" target="_blank">Papua New Guinea: High Frequency Phone Survey on COVID-19 2022, Round 5</a>
-                                                    </li>
-                                                    
-                                                    <li class="size-15" style="margin-bottom: 0; margin-left: 0; font-size: 15px; line-height: 23px; text-align: left;" lang="x-size-15">
-                                                        <a href="https://microdata.pacificdata.org/index.php/catalog/857" target="_blank">Papua New Guinea: High Frequency Phone Survey on COVID-19 2021, Round 4</a>
-                                                    </li>
-                                                    
-                                                    <li class="size-15" style="margin-bottom: 0; margin-left: 0; font-size: 15px; line-height: 23px; text-align: left;" lang="x-size-15">
-                                                        <a href="https://microdata.pacificdata.org/index.php/catalog/856" target="_blank">Papua New Guinea: High Frequency Phone Survey on COVID-19 2021, Round 3</a>
-                                                    </li>
-                                                    
-                                                    <li class="size-15" style="margin-bottom: 0; margin-left: 0; font-size: 15px; line-height: 23px; text-align: left;" lang="x-size-15">
-                                                        <a href="https://microdata.pacificdata.org/index.php/catalog/855" target="_blank">Tonga: High Frequency Phone Survey of Households 2022, Round 1</a>
+                                                        <a href="https://microdata.pacificdata.org/index.php/catalog/864" target="_blank">Tonga: High Frequency Phone Survey of Households 2022, Round 2</a>
                                                     </li>
                                                     
                                                 </ul>
@@ -1718,122 +1838,19 @@
                                                 <ul style="margin-top: 20px; margin-bottom: 0; margin-left: 24px; padding: 0; list-style-type: disc;">
                                                     
                                                     <li class="size-15" style="margin-bottom: 0; margin-left: 0; font-size: 15px; line-height: 23px;" lang="x-size-15">
-                                                        <a href="https://purl.org/spc/digilib/doc/m2s5i" target="_blank">Pacific food systems</a>
+                                                        <a href="https://purl.org/spc/digilib/doc/9jeyu" target="_blank">Statistics for Development Division (SDD): 2022-2026 Business Plan</a>
                                                     </li>
                                                     
                                                     <li class="size-15" style="margin-bottom: 0; margin-left: 0; font-size: 15px; line-height: 23px;" lang="x-size-15">
-                                                        <a href="https://purl.org/spc/digilib/doc/dd8fn" target="_blank">Les systèmes alimentaires du Pacifique</a>
+                                                        <a href="https://purl.org/spc/digilib/doc/ctzyo" target="_blank">Levels and trends in imports of alcoholic drinks and interventions to control use in selected Pacific Island countries and territories</a>
                                                     </li>
                                                     
                                                     <li class="size-15" style="margin-bottom: 0; margin-left: 0; font-size: 15px; line-height: 23px;" lang="x-size-15">
-                                                        <a href="https://purl.org/spc/digilib/doc/2dwwa" target="_blank">Vanuatu 2020 National Population and Housing Census: basic Tables Report - Volume 1</a>
-                                                    </li>
-                                                    
-                                                    <li class="size-15" style="margin-bottom: 0; margin-left: 0; font-size: 15px; line-height: 23px;" lang="x-size-15">
-                                                        <a href="https://purl.org/spc/digilib/doc/afw9v" target="_blank">Republic of Kiribati 2020 population and housing: general report and results</a>
-                                                    </li>
-                                                    
-                                                    <li class="size-15" style="margin-bottom: 0; margin-left: 0; font-size: 15px; line-height: 23px;" lang="x-size-15">
-                                                        <a href="https://purl.org/spc/digilib/doc/zaigh" target="_blank">Tuvalu population &amp; housing mini-census 2017 report</a>
+                                                        <a href="https://purl.org/spc/digilib/doc/t5qtt" target="_blank">[Vanuatu] 2020 National Population and Housing Census: Analytical Report - Volume 2</a>
                                                     </li>
                                                     
                                                 </ul>
                                                 
-                                                
-                                                <p class="size-14" style="margin-top: 20px; margin-bottom: 0; font-size: 14px; line-height: 21px;" lang="x-size-14"><span style="text-decoration: inherit; color: #00b0ca;">Updated</span></p>
-                                                <ul style="margin-top: 20px; margin-bottom: 0; margin-left: 24px; padding: 0; list-style-type: disc;">
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://purl.org/spc/digilib/doc/qamdi" target="_blank">Kiribati Census Atlas</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://purl.org/spc/digilib/doc/nhsw3" target="_blank">Poverty in Kiribati: based on analysis of the 2019-20 household income and expenditure survey</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://purl.org/spc/digilib/doc/2ibmj" target="_blank">Poverty, food consumption, labour, and houseold income and expenditure in the Marshall Islands:  a compendium of analyses of the 2019/20 household income and expenditure survey</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://purl.org/spc/digilib/doc/iz5zz" target="_blank">Labour in Kiribati: based on analysis of the 2019-20 household income and expenditure survey</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://purl.org/spc/digilib/doc/zspsq" target="_blank">Enquête budget des familles à Wallis et Futuna – 2020: vol 1</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://purl.org/spc/digilib/doc/r4si5" target="_blank">Civil registration and vital statistics in French Polynesia</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://purl.org/spc/digilib/doc/eziz6" target="_blank">Civil registration and vital statistics in Wallis and Futuna</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://purl.org/spc/digilib/doc/pokzj" target="_blank">Civil registration and vital statistics in New Caledonia</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://purl.org/spc/digilib/doc/fspdw" target="_blank">Tuvalu agriculture and fisheries report: based on the analysis of the 2017 population and housing census</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://purl.org/spc/digilib/doc/t27za" target="_blank">Civil registration and vital statistics in Niue</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://purl.org/spc/digilib/doc/77mus" target="_blank">Civil registration and vital statistics in Nauru</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://purl.org/spc/digilib/doc/rtuyr" target="_blank">Civil registration and vital statistics In Marshall Islands</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://purl.org/spc/digilib/doc/m7hyb" target="_blank">Pacific kava production, trade and consumption: Gaps in data hinder full analysis</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://purl.org/spc/digilib/doc/3ef69" target="_blank">Tuvalu National Population Housing Census 2012_Migration, Urbanisation and Youth Monograph Report</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <p style="margin-top: 0; margin-bottom: 0;">
-                                                            <a href="https://purl.org/spc/digilib/doc/md4zr" target="_blank">Atlas de la population de Nouvelle-Calédonie: basé sur le recensement de 2004</a>
-                                                        </p>
-                                                    </li>
-                                                    
-                                                </ul>
                                                 
                                             </div>
                                         </div>
@@ -1860,12 +1877,12 @@
 
                                         <div style="margin-left: 20px; margin-right: 20px;">
                                             <div style="font-size: 12px; font-style: normal; font-weight: normal; line-height: 19px;" align="right">
-                                                <a style="text-decoration: underline; transition: opacity 0.1s ease-in; color: #0046ad;" href="https://purl.org/spc/digilib/doc/m2s5i" target="_blank">
+                                                <a style="text-decoration: underline; transition: opacity 0.1s ease-in; color: #0046ad;" href="https://purl.org/spc/digilib/doc/9jeyu" target="_blank">
                                                     <img
                                                         style="border: 0; display: block; height: auto; width: 100%; max-width: 200px;"
                                                         alt=""
                                                         width="200"
-                                                        src="https://spccfpstore1.blob.core.windows.net/digitallibrary-assets/covers/4a/4a198eb343e2150069efde8b895d3d91.png"
+                                                        src="https://spccfpstore1.blob.core.windows.net/digitallibrary-assets/covers/e2/e25b052fec5fa2597606164c2f92ef3c.png"
                                                     />
                                                 </a>
                                             </div>
@@ -1947,70 +1964,30 @@
                                     >
                                         <div style="margin-left: 20px; margin-right: 20px;">
                                             <div style="mso-line-height-rule: exactly; mso-text-raise: 11px; vertical-align: middle;">
-                                                <p class="size-14" style="margin-top: 0; margin-bottom: 0; font-size: 14px; line-height: 21px;" lang="x-size-14"><font color="#00b0ca">September</font></p>
+                                                <p class="size-14" style="margin-top: 0; margin-bottom: 0; font-size: 14px; line-height: 21px;" lang="x-size-14"><font color="#00b0ca">December</font></p>
                                                 
                                                 <ul style="margin-top: 20px; margin-bottom: 0; margin-left: 24px; padding: 0; list-style-type: disc;">
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <a href="https://sdd.spc.int/events/2022/09/producing-and-using-gender-statistics-monitor-sdgs-and-implement-pacific-roadmap" target="_blank">Producing and Using Gender Statistics to Monitor the SDGs and Implement the Pacific Roadmap, Kiribati</a>
+                                                        <a href="https://sdd.spc.int/events/2022/12/webinar-regional-cause-death-training-and-icd-11" target="_blank">Webinar on regional cause-of-death training and ICD-11</a>
                                                     </li>
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <a href="https://sdd.spc.int/events/2022/09/escapasia-pacific-stats-cafe-statistical-literacy-framework" target="_blank">ESCAP Asia-Pacific Stats Café Series: Up-taking data use and increasing statistical literacy in the Pacific</a>
+                                                        <a href="https://sdd.spc.int/events/2022/12/IMTS-workshop-compilation" target="_blank">International merchandise trade statistics workshop on compilation, analysis, dissemination, indicators and uses announcement</a>
                                                     </li>
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <a href="https://sdd.spc.int/events/2022/09/VIS-sharing-knowledge-resilient-sustainable-and-prosperous-islands" target="_blank">Virtual Island Summit: Sharing Knowledge for Resilient, Sustainable And Prosperous Islands Worldwide</a>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <a href="https://sdd.spc.int/events/2022/09/escap-3rd-ministerial-conference-regional-economic-cooperation-and-integration" target="_blank">ESCAP Third Ministerial Conference on Regional Economic Cooperation and Integration in Asia and the Pacific</a>
+                                                        <a href="https://sdd.spc.int/events/2022/11/population-estimation-workshop" target="_blank">Population Estimation Workshop</a>
                                                     </li>
                                                     
                                                 </ul>
                                                 
                                                 
-                                                <p class="size-14" style="margin-top: 20px; margin-bottom: 0; font-size: 14px; line-height: 21px;" lang="x-size-14"><font color="#00b0ca">October</font></p>
+                                                <p class="size-14" style="margin-top: 20px; margin-bottom: 0; font-size: 14px; line-height: 21px;" lang="x-size-14"><font color="#00b0ca">January</font></p>
                                                 <ul style="margin-top: 20px; margin-bottom: 0; margin-left: 24px; padding: 0; list-style-type: disc;">
                                                     
                                                     <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <a href="https://sdd.spc.int/events/2022/10/pacific-data-hub-talanoa-power-data-visualisation" target="_blank">Pacific Data Hub Talanoa: The Power of Data Visualisation  </a>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <a href="https://sdd.spc.int/events/2022/10/clean-energy-workshop-and-pacific-women-energy-conference" target="_blank">Clean Energy Workshop and Pacific Women in Energy Conference</a>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <a href="https://sdd.spc.int/events/2022/10/producing-and-using-gender-statistics-monitor-sdgs-and-implement-pacific-roadmap-0" target="_blank">Producing and Using Gender Statistics to Monitor the SDGs and Implement the Pacific Roadmap, Tonga</a>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <a href="https://sdd.spc.int/events/2022/10/producing-and-using-gender-statistics-monitor-sdgs-and-implement-pacific-roadmap" target="_blank">Producing and Using Gender Statistics to Monitor the SDGs and Implement the Pacific Roadmap, Solomon Is.</a>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <a href="https://sdd.spc.int/events/2022/10/unlocking-food-and-agriculture-microdata-achieve-sdgs-fam-catalogue" target="_blank">Unlocking Food and Agriculture Microdata to Achieve the SDGs: The FAM Catalogue</a>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <a href="https://sdd.spc.int/events/2022/10/technical-workshop-statistical-literacy-and-capacity-development-pacific" target="_blank">Technical Workshop on Statistical Literacy and Capacity Development for the Pacific</a>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <a href="https://sdd.spc.int/events/2022/10/international-food-acquisition-research-and-methods-ifarm-workshop" target="_blank">International Food Acquisition Research and Methods (iFARM) Workshop</a>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <a href="https://sdd.spc.int/events/2022/10/measuring-consumption-then-and-now-20-years-deaton-and-zaidi" target="_blank">Measuring consumption then and now – 20 years since Deaton and Zaidi</a>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <a href="https://sdd.spc.int/events/2022/10/10th-statistics-methods-board-meeting-psmb" target="_blank">10th Statistics Methods Board Meeting (PSMB)</a>
-                                                    </li>
-                                                    
-                                                    <li class="size-14" style="margin-bottom: 0; margin-left: 0; font-size: 14px; line-height: 21px;" lang="x-size-14">
-                                                        <a href="https://sdd.spc.int/events/2022/10/global-network-and-iswghs-joint-webinar-combining-surveys-small-area-estimation" target="_blank">Global Network and ISWGHS joint webinar: Combining Surveys in Small Area Estimation</a>
+                                                        <a href="https://sdd.spc.int/events/2023/01/3rd-international-forum-migration-statistics" target="_blank">3rd International Forum on Migration Statistics</a>
                                                     </li>
                                                     
                                                 </ul>
@@ -2043,12 +2020,12 @@
 
                                         <div style="margin-left: 20px; margin-right: 20px;">
                                             <div style="font-size: 12px; font-style: normal; font-weight: normal; line-height: 19px;" align="center">
-                                                <a style="text-decoration: underline; transition: opacity 0.1s ease-in; color: #0046ad;" href="https://sdd.spc.int/events/2022/09/producing-and-using-gender-statistics-monitor-sdgs-and-implement-pacific-roadmap" target="_blank">
+                                                <a style="text-decoration: underline; transition: opacity 0.1s ease-in; color: #0046ad;" href="https://sdd.spc.int/events/2022/12/webinar-regional-cause-death-training-and-icd-11" target="_blank">
                                                     <img
                                                         style="border: 0; display: block; height: auto; width: 100%; max-width: 480px;"
                                                         alt=""
                                                         width="260"
-                                                        src="https://sdd.spc.int/sites/default/files/styles/large/public/eventimages/2022-09/GenStats_Training-PICTs_6.jpg?itok=OfJExZI-"
+                                                        src="https://sdd.spc.int/sites/default/files/styles/large/public/eventimages/2022-12/ICD-workshop-logo_1_0.jpg?itok=bljlZSiX"
                                                     />
                                                 </a>
                                             </div>
